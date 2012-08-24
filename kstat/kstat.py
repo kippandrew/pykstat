@@ -11,71 +11,59 @@
 # Use is sujbect to license terms.
 #
 
-import ctypes as C
+import ctypes as CTYPES
 import libkstat
-
+from stats.sysinfo import sysinfo_t
+from stats.cpu import cpu_sys_stats_t
 
 class Kstat():
-    def __init__(self, module='', instance=-1, name=''):
-        self._ctl = libkstat.kstat_open()
-        self._module = module
-        self._inst = instance
-        self._name = name
+    def __init__(self):
+        self._kstat_ctl = libkstat.kstat_open()
 
     def __del__(self):
-        libkstat.kstat_close(self._ctl)
+        libkstat.kstat_close(self._kstat_ctl)
 
-    def __str__(self):
-        s = 'Module: {0}, instance: {1}, name: {2}'.format(self._module, self._inst, self._name) 
-        return s
+    def write(self):
+        pass
 
-    def __repr__(self):
-        s = 'Kstat("{0}", {1}, "{2}")'.format(self._module, self._inst, self._name) 
-        return s
+    def read(self, kstat_p):
+        libkstat.kstat_read(self._kstat_ctl, kstat_p, None)
+        kstat = kstat_p.contents  
+        return kstat 
 
-    def lookup(self):
-        libkstat.kstat_lookup(self._ctl, self._module, self._inst, self._name)
+    def update(self, kstat):
+        pass
+    
+    def lookup(self, module, instance, name):
+        kstat_p = libkstat.kstat_lookup(self._kstat_ctl, module, instance, name)
+        if kstat_p is None:
+            return KeyError((module, instance, name))
+        return kstat_p
 
-    def __getitem__(self, triplet):
-        module, instance, name = triplet
-        ksp = libkstat.kstat_lookup(self._ctl, module, instance, name)
-        if not ksp:
-            raise KeyError(triplet)
-        libkstat.kstat_read(self._ctl, ksp, None)
-        ks = ksp.contents
-        if ks.ks_type == libkstat.KSTAT_TYPE_RAW:
-            pass
-        elif ks.ks_type == libkstat.KSTAT_TYPE_NAMED:
-            value = dict()
-            print ks.ks_data
-            datap = C.cast(ks.ks_data, C.POINTER(libkstat.kstat_named))
-            for i in range(ks.ks_ndata):
-                if datap[i].data_type == libkstat.KSTAT_DATA_CHAR:
-                    value[datap[i].name] = datap[i].value.c
-                elif datap[i].data_type == libkstat.KSTAT_DATA_INT32:
-                    value[datap[i].name] = datap[i].value.i32
-                elif datap[i].data_type == libkstat.KSTAT_DATA_UINT32:
-                    value[datap[i].name] = datap[i].value.ui32
-                elif datap[i].data_type == libkstat.KSTAT_DATA_INT64:
-                    value[datap[i].name] = datap[i].value.i64
-                elif datap[i].data_type == libkstat.KSTAT_DATA_UINT64:
-                    value[datap[i].name] = datap[i].value.ui64
-                #print datap.contents
-                #print dir(datap[i].value)
-                #value[datap[i].name] = 0
-        elif ks.ks_type == libkstat.KSTAT_TYPE_INTR:
-            pass
-        elif ks.ks_type == libkstat.KSTAT_TYPE_IO:
-            pass
-        elif ks.ks_type == libkstat.KSTAT_TYPE_TIMER:
+    def retrieve(self, module, instance, name, raw_data_type=None):
+        # lookup kstat data
+        kstat_p = self.lookup(module, instance, name)
+        # read kstat data
+        kstat = self.read(kstat_p)
+        # kstat can store multiple types of data, return the appropriate type 
+        if kstat.ks_type == libkstat.KSTAT_TYPE_RAW:
+            if not raw_data_type:
+                raise TypeError('raw_data_type not specified for ks_type = KSTAT_TYPE_RAW')
+            return KstatRawData(kstat, raw_data_type)
+        elif kstat.ks_type == libkstat.KSTAT_TYPE_NAMED:
+            return KstatNamed(kstat)
+        elif kstat.ks_type == libkstat.KSTAT_TYPE_INTR:
+            return KstatIntrData(kstat) 
+        elif kstat.ks_type == libkstat.KSTAT_TYPE_IO:
+            return KstatIOData(kstat) 
+        elif kstat.ks_type == libkstat.KSTAT_TYPE_TIMER:
             pass
         else:
             pass
-
         return value
 
     def dump(self):
-        kc = self._ctl.contents
+        kc = self._kstat_ctl.contents
         ksp = kc.kc_chain
         while ksp:
             ks = ksp.contents
@@ -83,26 +71,56 @@ class Kstat():
             ksp = ks.ks_next
         pass 
 
-
-class KstatValue():
+class KstatData():
     pass
 
+class KstatNamedData(KstatData):
+    def __init__(self, kstat):
+        self._kstat_data_p = CTYPES.cast(kstat.ks_data, CTYPES.POINTER(libkstat._kstat_named_t))
+        self._kstat_data = self._kstat_data_p.contents
+        self._values = dict()
+        for i in range(kstat.ks_ndata):
+            if self._kstat_data_p[i].data_type == libkstat.KSTAT_DATA_CHAR:
+                self.values[self._kstat_data_p[i].name] = self._kstat_data_p[i].value.c
+            elif self._kstat_data_p[i].data_type == libkstat.KSTAT_DATA_INT32:
+                self.values[self._kstat_data_p[i].name] = self._kstat_data_p[i].value.i32
+            elif self._kstat_data_p[i].data_type == libkstat.KSTAT_DATA_UINT32:
+                self._values[self._kstat_data_p[i].name] = self._kstat_data_p[i].value.ui32
+            elif self._kstat_data_p[i].data_type == libkstat.KSTAT_DATA_INT64:
+                self._values[self._kstat_data_p[i].name] = self._kstat_data_p[i].value.i64
+            elif self._kstat_data_p[i].data_type == libkstat.KSTAT_DATA_UINT64:
+                self._values[self._kstat_data_p[i].name] = self._kstat_data_p[i].value.ui64
+    
+    def __len__(self):
+        return len(self._values)
 
-class NamedKstat(KstatValue):
-    def __init__(self):
-        pass
+    def __getitem__(self, k):
+        return self._values[k]
 
+    def __iter__(self):
+        for i in self._values:
+            yield i 
+
+class KstatIOData(KstatData):
+    def __init__(self, kstat):
+        self._kstat_data_p = CTYPES.cast(kstat.ks_data, CTYPES.POINTER(libkstat._kstat_io_t))
+        self._kstat_data = self._kstat_data_p.contents
+
+class KstatRawData(KstatData):
+    def __init__(self, kstat, raw_data_type):
+        self._kstat_data_p = CTYPES.cast(kstat.ks_data, CTYPES.POINTER(raw_data_type))
+        self._kstat_data = self._kstat_data_p.contents
+
+    def __getitem__(self, k):
+        attr = getattr(self._kstat_data, k)
+        return attr 
 
 def main():
-    import pprint as pp
     k = Kstat()
-    pp.pprint(k)
-    #k.dump()
-    pp.pprint(k['unix', 0, 'kstat_types'])
-    #pp.pprint(k['unix', 0, 'zio_data_buf2560'])
-    pp.pprint(k['audiohd', 0, 'engine_0'])
-    #k.lookup()
-
+    print k.retrieve('unix', 0, 'sysinfo', sysinfo_t)['runque']
+    print k.retrieve('cpu_stat', 0, 'cpu_stat0', cpu_sys_stats_t)['cpu_ticks_user']
+    print k.retrieve('cpu_stat', 0, 'cpu_stat0', cpu_sys_stats_t)['cpu_ticks_user']
+    print k.dump()
 
 if __name__ == '__main__':
     main()
