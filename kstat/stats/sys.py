@@ -19,5 +19,4 @@ class sysinfo_t(CTYPES.Structure):
         ('waiting', CTYPES.c_uint)
     ]
 
-sysinfo_p = CTYPES.POINTER(sysinfo_t)
-
+sysinfo_t_p = CTYPES.POINTER(sysinfo_t)
