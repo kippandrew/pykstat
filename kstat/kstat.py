@@ -82,25 +82,61 @@ class Kstat():
             ksp = ks.ks_next
 
 class KstatData():
-    pass
+    
+    def __init__(self, kstat, kstat_data_type):
+        # cast kstat data to data type
+        self._kstat = kstat 
+        self._kstat_data_p = CTYPES.cast(kstat.ks_data, CTYPES.POINTER(kstat_data_type))
+
+    @property
+    def module(self):
+        return self._kstat.ks_module 
+
+    @property
+    def instance(self):
+        return self._kstat.ks_instance 
+    
+    @property
+    def name(self):
+        return self._kstat.ks_name 
+
+    @property
+    def data(self):
+        return self._kstat_data_p
+
+    @property
+    def data_count(self):
+        return self._kstat.ks_ndata
+
+    @property
+    def data_type(self):
+        return libkstat.kstat_type_names[self._kstat.ks_type] 
+
+    @property
+    def data_class(self):
+        return self._kstat.ks_class 
+
+    def __repr__(self):
+        return str({'module': self.module, 'instance': self.instance, 'name': self.name, 'type': self.data_type, 'class': self.data_class, 'data': self.data})
 
 class KstatNamedData(KstatData):
     def __init__(self, kstat):
-        self._kstat_data_p = CTYPES.cast(kstat.ks_data, CTYPES.POINTER(libkstat._kstat_named_t))
-        self._kstat_data = self._kstat_data_p.contents
+        # Initialize superclass 
+        KstatData.__init__(self, kstat, libkstat._kstat_named_t) 
+        
         self._values = dict()
-        for i in range(kstat.ks_ndata):
-            if self._kstat_data_p[i].data_type == libkstat.KSTAT_DATA_CHAR:
-                self.values[self._kstat_data_p[i].name] = self._kstat_data_p[i].value.c
-            elif self._kstat_data_p[i].data_type == libkstat.KSTAT_DATA_INT32:
-                self.values[self._kstat_data_p[i].name] = self._kstat_data_p[i].value.i32
-            elif self._kstat_data_p[i].data_type == libkstat.KSTAT_DATA_UINT32:
-                self._values[self._kstat_data_p[i].name] = self._kstat_data_p[i].value.ui32
-            elif self._kstat_data_p[i].data_type == libkstat.KSTAT_DATA_INT64:
-                self._values[self._kstat_data_p[i].name] = self._kstat_data_p[i].value.i64
-            elif self._kstat_data_p[i].data_type == libkstat.KSTAT_DATA_UINT64:
-                self._values[self._kstat_data_p[i].name] = self._kstat_data_p[i].value.ui64
-    
+        for i in range(self.data_count):
+            if self.data[i].data_type == libkstat.KSTAT_DATA_CHAR:
+                self._values[self.data[i].name] = self.data[i].value.c
+            elif self.data[i].data_type == libkstat.KSTAT_DATA_INT32:
+                self._values[self.data[i].name] = self.data[i].value.i32
+            elif self.data[i].data_type == libkstat.KSTAT_DATA_UINT32:
+                self._values[self.data[i].name] = self.data[i].value.ui32
+            elif self.data[i].data_type == libkstat.KSTAT_DATA_INT64:
+                self._values[self.data[i].name] = self.data[i].value.i64
+            elif self.data[i].data_type == libkstat.KSTAT_DATA_UINT64:
+                self._values[self.data[i].name] = self.data[i].value.ui64
+ 
     def __len__(self):
         return len(self._values)
 
@@ -116,30 +152,32 @@ class KstatNamedData(KstatData):
 
 class KstatIOData(KstatData):
     def __init__(self, kstat):
-        self._kstat_data_p = CTYPES.cast(kstat.ks_data, CTYPES.POINTER(libkstat._kstat_io_t))
-        self._kstat_data = self._kstat_data_p.contents
-        print self._kstat_data   
+        # Initialize superclass 
+        KstatData.__init__(self, kstat, libkstat._kstat_io_t) 
  
-    def __len__(self):
-        return len(self._kstat_data)
-
     def __getitem__(self, k):
-        pass
+        if not hasattr(self.data, k):
+            raise KeyError()
+        attr = getattr(self.data, k)
+        return attr 
 
 class KstatRawData(KstatData):
     def __init__(self, kstat, raw_data_type):
-        self._kstat_data_p = CTYPES.cast(kstat.ks_data, CTYPES.POINTER(raw_data_type))
-        self._kstat_data = self._kstat_data_p.contents
+        # Initialize superclass 
+        KstatData.__init__(self, kstat, raw_data_type)
 
     def __getitem__(self, k):
-        attr = getattr(self._kstat_data, k)
+        if not hasattr(self.data, k):
+            raise KeyError()
+        attr = getattr(self.data, k)
         return attr 
 
 def main():
     k = Kstat()
-    #print k.retrieve('unix', 0, 'sysinfo', sysinfo_t)['runque']
-    #print k.retrieve('cpu_stat', 0, 'cpu_stat0', cpu_sys_stats_t)['cpu_ticks_user']
-    #print k.retrieve('sd', 0, 'sd1')
+    import stats
+    print k.retrieve('unix', 0, 'sysinfo', stats.sysinfo_t)['runque']
+    print k.retrieve('cpu_stat', 0, 'cpu_stat0', stats.cpu_sys_stats_t)['cpu_ticks_user']
+    print k.retrieve('sd', 0, 'sd0')
     #print list(k.retrieve_all('lgrp', -1, None))
     #print k.read(kstat_p)
     #print k.read(kstat_p) 
