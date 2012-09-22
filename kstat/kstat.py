@@ -85,8 +85,11 @@ class KstatData():
     
     def __init__(self, kstat, kstat_data_type):
         # cast kstat data to data type
-        self._kstat = kstat 
-        self._kstat_data_p = CTYPES.cast(kstat.ks_data, CTYPES.POINTER(kstat_data_type))
+        self._kstat = kstat
+        if self._kstat != None and self._kstat.ks_data != None:
+            self._kstat_data_p = CTYPES.cast(kstat.ks_data, CTYPES.POINTER(kstat_data_type))
+        else:
+            self._kstat_data_p = None
 
     @property
     def module(self):
@@ -156,9 +159,9 @@ class KstatIOData(KstatData):
         KstatData.__init__(self, kstat, libkstat._kstat_io_t) 
  
     def __getitem__(self, k):
-        if not hasattr(self.data, k):
+        if not hasattr(self.data.contents, k):
             raise KeyError()
-        attr = getattr(self.data, k)
+        attr = getattr(self.data.contents, k)
         return attr 
 
 class KstatRawData(KstatData):
@@ -167,9 +170,9 @@ class KstatRawData(KstatData):
         KstatData.__init__(self, kstat, raw_data_type)
 
     def __getitem__(self, k):
-        if not hasattr(self.data, k):
+        if not hasattr(self.data.contents, k):
             raise KeyError()
-        attr = getattr(self.data, k)
+        attr = getattr(self.data.contents, k)
         return attr 
 
 def main():

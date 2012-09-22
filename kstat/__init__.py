@@ -15,6 +15,6 @@
 __version__ = '1'
 __author__ = 'Cyril Plisko <cyril.plisko@grigale.com>'
 
-from .kstat import Kstat
+from .kstat import Kstat, KstatData, KstatNamedData, KstatIOData
 
 __all__ = ['Kstat']
